@@ -15,3 +15,4 @@ zbar-py==1.0.4
 pyzbar==0.1.8
 six==1.15.0
 Werkzeug==1.0.1
+libgtk2.0-dev
