@@ -3,6 +3,7 @@ from flask import Flask
 import sys
 sys.path.append('/home/site/wwwroot/antenv/lib/python3.7/site-packages')
 
+import cv2
 import os
 import json
 from datetime import datetime
