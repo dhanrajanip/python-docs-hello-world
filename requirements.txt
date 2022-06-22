@@ -4,7 +4,7 @@ imutils==0.5.3
 itsdangerous==1.1.0
 Jinja2==2.11.2
 MarkupSafe==1.1.1
-numpy==1.18.5
+numpy==1.22.0
 opencv-python>=3.4.9.33
 pandas==1.0.4
 Pillow==7.1.2
