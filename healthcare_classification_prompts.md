@@ -1,41 +1,65 @@
-# Healthcare Document Classification Prompts
+# Healthcare Document Classification Prompts for Docs Ontology
 
-This file provides a ready-to-use three-step prompt set for healthcare document classification based on a predefined Excel configuration.
+This file provides a ready-to-use three-step prompt set for healthcare document classification based on the Docs Ontology configuration.
 
 ## Purpose
 
-Classify a single healthcare document page using a fixed three-level hierarchy:
+Classify a single healthcare document page using the ontology fields supplied in configuration.
 
-1. **Domain**
-2. **Template Library** (mapped from the `Family` column)
-3. **Template**
+The prompt flow uses this operational hierarchy:
 
-The prompts are designed to:
+1. **Group**
+2. **SubGroup**
+3. **Exact ontology row**
 
-- use only predefined values from configuration
-- return structured JSON
-- stop early when `Other` is selected at Level 1 or Level 2
-- produce the final extracted feature **Healthcare Classification**
+The final row is selected from the filtered candidate rows and includes:
+
+- `Group`
+- `SubGroup`
+- `Speciality`
+- `DocumentType`
+- `In-Out`
+- `BodyPart`
+- `SNOMEDCT`
+- `LOINCID`
+- `Source`
+
+This approach keeps the workflow at three prompts while still supporting the richer ontology you provided.
 
 ## Expected Configuration Input
 
 The source Excel file should contain these columns:
 
-- `Domain`
-- `Family`
-- `Family Description`
-- `Template`
+- `Group`
+- `SubGroup`
+- `Speciality`
+- `DocumentType`
+- `In-Out`
+- `BodyPart`
+- `SNOMEDCT`
+- `LOINCID`
+- `Source`
+
+### Recommended Preprocessing
+
+Before sending ontology rows to the model:
+
+1. Add a stable unique identifier for each row, such as `row_id`.
+2. Preserve blank values as empty strings rather than dropping columns.
+3. Deduplicate exact duplicate rows if they exist.
+4. Normalize whitespace only; do not rename values.
 
 ## Recommended Orchestration Rules
 
-1. Load the Excel configuration into memory.
-2. Build the prompt inputs from the configuration.
-3. Run **Prompt 1** with all unique Domain values plus `Other`.
+1. Load the ontology Excel file into memory.
+2. Assign a stable `row_id` to each ontology row.
+3. Run **Prompt 1** with all unique `Group` values plus `Other`.
 4. If Prompt 1 returns `Other`, stop.
-5. Run **Prompt 2** with all Family values associated with the selected Domain plus `Other`.
+5. Run **Prompt 2** with all unique `SubGroup` values for the selected `Group` plus `Other`.
 6. If Prompt 2 returns `Other`, stop.
-7. Run **Prompt 3** with all Template values associated with the selected Domain and Template Library.
-8. Set **Healthcare Classification** to the Template returned by Prompt 3.
+7. Filter ontology rows to the selected `Group` and `SubGroup`.
+8. Run **Prompt 3** using the filtered ontology rows.
+9. Set **Healthcare Classification** to the final selected ontology row.
 
 ## Shared System Prompt
 
@@ -44,48 +68,50 @@ Use this same system prompt for all three steps.
 ```text
 You are a healthcare document classification engine.
 
-Your job is to classify a single document page using only the predefined classification values provided in the prompt input.
+Your job is to classify a single document page using only the predefined Docs Ontology values provided in the prompt input.
 
 Rules:
-1. Use only the supplied candidate values. Do not invent or normalize new labels.
-2. Evaluate the document page content exactly as provided.
-3. Base your decision on explicit evidence from the page such as headers, form names, section titles, clinical terminology, layout clues, and repeated field labels.
-4. If the evidence is weak, ambiguous, conflicting, or does not reasonably fit any provided option, choose "Other".
-5. Match Percentage is how strongly the page aligns to the chosen option compared with the candidate list.
-6. Confidence Percentage is how certain you are in your decision based on the page evidence.
-7. Percentages must be integers from 0 to 100.
-8. Reasoning must be concise, factual, and limited to evidence visible in the page content.
-9. Return valid JSON only. Do not include markdown, commentary, or code fences.
-10. Preserve the exact candidate value spelling and capitalization from the provided options.
+1. Use only the supplied candidate values and ontology rows. Do not invent labels, aliases, or normalized replacements.
+2. Evaluate the page exactly as provided.
+3. Base decisions on explicit evidence from the page such as titles, headers, specialty names, form labels, report sections, procedure names, ordering language, imaging modality names, note types, and payer or legal wording.
+4. When choosing among similar candidates, prefer the option best supported by explicit evidence on the page.
+5. If the evidence is weak, ambiguous, conflicting, or does not reasonably fit any candidate at Prompt 1 or Prompt 2, choose "Other".
+6. Match Percentage is how strongly the page aligns to the selected candidate among the options shown.
+7. Confidence Percentage is how certain you are based on the visible page evidence.
+8. Percentages must be integers from 0 to 100.
+9. Reasoning must be concise, factual, and grounded in page evidence.
+10. Return valid JSON only. Do not include markdown, commentary, or code fences.
+11. Preserve exact spelling, capitalization, punctuation, and spacing from the provided candidate values.
+12. Blank ontology fields are meaningful and should not be filled in unless they are explicitly present in the selected candidate row.
 ```
 
 ---
 
-## Prompt 1: Domain Classification
+## Prompt 1: Group Classification
 
 ### User Prompt Template
 
 ```text
-Classify the following healthcare document page into the best matching Domain.
+Classify the following healthcare document page into the best matching Group from the Docs Ontology.
 
-Candidate Domain values:
-{{DOMAIN_OPTIONS_WITH_OTHER}}
+Candidate Group values:
+{{GROUP_OPTIONS_WITH_OTHER}}
 
 Document page content:
 {{DOCUMENT_PAGE_TEXT}}
 
 Return JSON in exactly this format:
 {
-  "domain_name": "<selected domain or Other>",
+  "group": "<selected group or Other>",
   "match_percentage": <integer 0-100>,
   "confidence_percentage": <integer 0-100>,
   "reasoning": "<concise evidence-based explanation>"
 }
 
 Selection guidance:
-- Compare the page against all provided Domain values.
-- Choose the single best match.
-- If no Domain is a reasonable fit, return "Other".
+- Compare the page against all provided Group values.
+- Choose the single best Group.
+- If no Group is a reasonable fit, return "Other".
 - Do not return any fields other than the four fields above.
 ```
 
@@ -93,48 +119,45 @@ Selection guidance:
 
 ```json
 {
-  "domain_name": "Claims",
-  "match_percentage": 88,
-  "confidence_percentage": 84,
-  "reasoning": "The page contains claim identifiers, payer/member fields, billed services, and adjudication-related terminology that align most strongly with Claims."
+  "group": "Clinical Notes",
+  "match_percentage": 90,
+  "confidence_percentage": 87,
+  "reasoning": "The page is a narrative clinician-authored note with history, assessment, and plan content rather than an order, imaging study, consent, or financial document."
 }
 ```
 
 ---
 
-## Prompt 2: Template Library Classification
+## Prompt 2: SubGroup Classification
 
 Run this prompt only when Prompt 1 does **not** return `Other`.
 
 ### User Prompt Template
 
 ```text
-Classify the following healthcare document page into the best matching Template Library within the selected Domain.
+Classify the following healthcare document page into the best matching SubGroup within the selected Group.
 
-Selected Domain:
-{{SELECTED_DOMAIN}}
+Selected Group:
+{{SELECTED_GROUP}}
 
-Candidate Template Library values:
-{{FAMILY_OPTIONS_WITH_OTHER}}
-
-Optional Template Library descriptions:
-{{FAMILY_DESCRIPTION_OPTIONS}}
+Candidate SubGroup values:
+{{SUBGROUP_OPTIONS_WITH_OTHER}}
 
 Document page content:
 {{DOCUMENT_PAGE_TEXT}}
 
 Return JSON in exactly this format:
 {
-  "template_library": "<selected template library or Other>",
+  "subgroup": "<selected subgroup or Other>",
   "match_percentage": <integer 0-100>,
   "confidence_percentage": <integer 0-100>,
   "reasoning": "<concise evidence-based explanation>"
 }
 
 Selection guidance:
-- Evaluate only the Template Library values provided for the selected Domain.
-- Use the Family Description values when helpful, but classify only to a Template Library name from the candidate list.
-- Choose "Other" if none of the candidate Template Libraries is a reasonable fit.
+- Evaluate only the SubGroup values provided for the selected Group.
+- Choose the single best SubGroup.
+- If none is a reasonable fit, return "Other".
 - Do not return any fields other than the four fields above.
 ```
 
@@ -142,62 +165,83 @@ Selection guidance:
 
 ```json
 {
-  "template_library": "Explanation of Benefits",
-  "match_percentage": 91,
-  "confidence_percentage": 89,
-  "reasoning": "The page includes member responsibility, allowed amount, provider details, and service line adjudication language typical of an Explanation of Benefits."
+  "subgroup": "Progress Note",
+  "match_percentage": 92,
+  "confidence_percentage": 90,
+  "reasoning": "The page contains a dated follow-up clinical narrative with interval status, assessment, and plan, which is most consistent with a progress note."
 }
 ```
 
 ---
 
-## Prompt 3: Template Classification
+## Prompt 3: Exact Ontology Row Classification
 
 Run this prompt only when Prompt 2 does **not** return `Other`.
+
+### Prompt Intent
+
+This step selects the exact ontology row, not just a `DocumentType` label. This is important because the same or similar document types may differ by `Speciality`, `In-Out`, `BodyPart`, or coding metadata.
 
 ### User Prompt Template
 
 ```text
-Classify the following healthcare document page into the exact Template within the selected Domain and Template Library.
+Classify the following healthcare document page to the single best matching Docs Ontology row within the selected Group and SubGroup.
 
-Selected Domain:
-{{SELECTED_DOMAIN}}
+Selected Group:
+{{SELECTED_GROUP}}
 
-Selected Template Library:
-{{SELECTED_TEMPLATE_LIBRARY}}
+Selected SubGroup:
+{{SELECTED_SUBGROUP}}
 
-Candidate Template values:
-{{TEMPLATE_OPTIONS}}
-
-Related configuration rows:
-{{FILTERED_CONFIGURATION_ROWS}}
+Candidate ontology rows:
+{{FILTERED_ONTOLOGY_ROWS_WITH_ROW_ID}}
 
 Document page content:
 {{DOCUMENT_PAGE_TEXT}}
 
 Return JSON in exactly this format:
 {
-  "template_name": "<selected template>",
+  "row_id": "<selected row id>",
+  "group": "<selected Group>",
+  "subgroup": "<selected SubGroup>",
+  "speciality": "<selected Speciality>",
+  "document_type": "<selected DocumentType>",
+  "in_out": "<selected In-Out>",
+  "body_part": "<selected BodyPart>",
+  "snomed_ct": "<selected SNOMEDCT>",
+  "loinc_id": "<selected LOINCID>",
+  "source": "<selected Source>",
   "match_percentage": <integer 0-100>,
   "confidence_percentage": <integer 0-100>,
   "reasoning": "<concise evidence-based explanation>"
 }
 
 Selection guidance:
-- Choose exactly one Template from the candidate list.
-- Use the related configuration rows to understand distinctions between similar templates.
-- Do not return "Other" at this step unless "Other" is explicitly included in the candidate Template list.
-- Do not return any fields other than the four fields above.
+- Choose exactly one ontology row from the candidate list.
+- Match all returned field values exactly to the selected candidate row.
+- Use Speciality, In-Out, BodyPart, SNOMEDCT, LOINCID, and Source as tie-breakers when the DocumentType names are similar.
+- Prefer rows with explicit evidence in the page, such as specialty names, inpatient or outpatient context, modality names, note headers, procedure names, anatomical references, or coding cues.
+- Do not invent missing values.
+- Do not return any fields other than the thirteen fields above.
 ```
 
 ### Expected Output Example
 
 ```json
 {
-  "template_name": "EOB Professional Services Standard",
-  "match_percentage": 93,
-  "confidence_percentage": 90,
-  "reasoning": "The page matches the professional services EOB format through service line billing details, adjustment groupings, patient responsibility fields, and payer adjudication structure."
+  "row_id": "R0108",
+  "group": "Clinical Notes",
+  "subgroup": "Progress Note",
+  "speciality": "Family practice",
+  "document_type": "Progress note",
+  "in_out": "",
+  "body_part": "",
+  "snomed_ct": "419772000",
+  "loinc_id": "11506-3",
+  "source": "LOINC",
+  "match_percentage": 94,
+  "confidence_percentage": 91,
+  "reasoning": "The page is a general follow-up clinical progress note and does not show a narrower specialty, modality, or inpatient/outpatient qualifier that would support a more specific progress-note row."
 }
 ```
 
@@ -205,7 +249,7 @@ Selection guidance:
 
 ## Stop Logic
 
-Use the following control logic outside the prompt:
+Use the following control logic outside the prompt.
 
 ### If Prompt 1 returns `Other`
 
@@ -225,30 +269,77 @@ Use the following control logic outside the prompt:
 
 Recommended extracted feature mapping:
 
-- If Prompt 3 succeeds, set **Healthcare Classification** = `template_name`
-- If Prompt 1 or Prompt 2 returns `Other`, set **Healthcare Classification** = `Other`
+- `Healthcare Classification` = `Group > SubGroup > Speciality > DocumentType`
 
-Optional audit fields you may also store:
+If you prefer a shorter display value, use:
 
-- `domain_name`
-- `domain_match_percentage`
-- `domain_confidence_percentage`
-- `domain_reasoning`
-- `template_library`
-- `template_library_match_percentage`
-- `template_library_confidence_percentage`
-- `template_library_reasoning`
-- `template_name`
-- `template_match_percentage`
-- `template_confidence_percentage`
-- `template_reasoning`
+- `Healthcare Classification` = `DocumentType`
+
+Recommended structured fields to store:
+
+- `group`
+- `subgroup`
+- `speciality`
+- `document_type`
+- `in_out`
+- `body_part`
+- `snomed_ct`
+- `loinc_id`
+- `source`
+- `row_id`
+- `group_match_percentage`
+- `group_confidence_percentage`
+- `group_reasoning`
+- `subgroup_match_percentage`
+- `subgroup_confidence_percentage`
+- `subgroup_reasoning`
+- `final_match_percentage`
+- `final_confidence_percentage`
+- `final_reasoning`
+
+---
+
+## Suggested Candidate Row Format for Prompt 3
+
+Pass filtered rows in a compact but explicit format like this:
+
+```text
+[
+  {
+    "row_id": "R0108",
+    "Group": "Clinical Notes",
+    "SubGroup": "Progress Note",
+    "Speciality": "Family practice",
+    "DocumentType": "Progress note",
+    "In-Out": "",
+    "BodyPart": "",
+    "SNOMEDCT": "419772000",
+    "LOINCID": "11506-3",
+    "Source": "LOINC"
+  },
+  {
+    "row_id": "R0109",
+    "Group": "Clinical Notes",
+    "SubGroup": "Progress Note",
+    "Speciality": "Family practice",
+    "DocumentType": "Attending Hospital Progress note",
+    "In-Out": "Hospital",
+    "BodyPart": "",
+    "SNOMEDCT": "419772000",
+    "LOINCID": "100550-3",
+    "Source": "LOINC"
+  }
+]
+```
 
 ---
 
 ## Implementation Notes
 
-- Treat `Family` as **Template Library** in the prompts and downstream output.
-- Deduplicate candidate lists before passing them to the model.
-- Pass clean OCR text for a single page at a time.
-- If page images are available, the same prompts can be used with multimodal models by attaching the page image in addition to OCR text.
-- For best consistency, use low temperature and enforce JSON response parsing.
+- Use `Group` and `SubGroup` as the first two prompt levels.
+- Use the final prompt to pick the exact ontology row rather than only `DocumentType`.
+- `Speciality` is not a separate prompt level; it is part of the row-level decision at Prompt 3.
+- Blank values in `In-Out`, `BodyPart`, `SNOMEDCT`, or `LOINCID` are valid and should remain blank if the selected row is blank.
+- Pass a single page of OCR text at a time.
+- If page images are available, use the same prompts with a multimodal model and include the page image as additional input.
+- For best consistency, use low temperature and enforce strict JSON schema parsing.
